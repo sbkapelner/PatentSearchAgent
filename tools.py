@@ -57,9 +57,11 @@ def scrape_patents_freepatentsonline(query: str, score_threshold: int = 600) -> 
             markdown_text = response["markdown"]
             patents = parse_patent_markdown(markdown_text, score_threshold)
             
+            print(f"Page {page}: Found {len(patents)} patents")
+            
             # Check if we found any patents below threshold
             if not patents:
-                # No patents met the threshold, stop scraping
+                print(f"No patents found on page {page} meeting threshold {score_threshold}")
                 break
                 
             # Add patents to results
@@ -84,7 +86,7 @@ def scrape_patents_freepatentsonline(query: str, score_threshold: int = 600) -> 
     formatted_output += "===================\n\n"
     formatted_output += f"Query: '{query}'\n"
     formatted_output += f"Score Threshold: {score_threshold}\n"
-    formatted_output += f"Found {len(extracted_patents)} matching patents\n\n"
+    formatted_output += f"Total Patents Found: {len(extracted_patents)}\n\n"
     
     for i, patent in enumerate(extracted_patents, start=1):
         formatted_output += f"📄 Patent {i}\n"
@@ -156,8 +158,8 @@ def parse_patent_markdown(markdown_text: str, score_threshold: int) -> list:
             title = title_col[title_start + 1:title_end]
             url = title_col[url_start + 1:url_end]
             
-            # Skip non-patent links
-            if 'result.html' in url or 'search.html' in url:
+            # Skip non-patent links and invalid URLs
+            if 'result.html' in url or 'search.html' in url or not url.startswith('http'):
                 continue
                 
             # Extract patent number
