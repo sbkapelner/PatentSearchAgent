@@ -52,10 +52,6 @@ def scrape_patents_freepatentsonline(query: str, pages: int = 2, score_threshold
 
             # Parse markdown response to extract relevant patent data
             markdown_text = response["markdown"]
-            print("\nRaw markdown from Firecrawl:")
-            print("-" * 50)
-            print(markdown_text)
-            print("-" * 50)
             patents = parse_patent_markdown(markdown_text, score_threshold)
             if patents:
                 extracted_patents.extend(patents)
@@ -68,12 +64,18 @@ def scrape_patents_freepatentsonline(query: str, pages: int = 2, score_threshold
         return "No patents found matching your search criteria."
 
     # Format the output
-    result = f"🔍 Found {len(extracted_patents)} patents for '{query}' (relevance score >= {score_threshold}):\n\n"
+    result = "🔍 Patent Search Results\n"
+    result += "===================\n\n"
+    result += f"Query: '{query}'\n"
+    result += f"Score Threshold: {score_threshold}\n"
+    result += f"Found {len(extracted_patents)} matching patents\n\n"
     
     for i, patent in enumerate(extracted_patents, start=1):
-        result += f"📄 Patent #{i}:\n"
-        result += f"   Title: **[{patent['title']}]({patent['url']})**\n"
-        result += f"   Patent Number: `{patent['patent_number']}`\n   Relevance Score: {patent['score']}\n\n"
+        result += f"📄 Patent {i}\n"
+        result += "---------\n"
+        result += f"**[{patent['title']}]({patent['url']})** \n"
+        result += f"Patent Number: `{patent['patent_number']}`\n"
+        result += f"Relevance Score: {patent['score']}\n\n"
 
     return result
 
