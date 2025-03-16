@@ -16,7 +16,7 @@ load_dotenv()
 
 # Initialize the LLM
 # Initialize LLM with GPT-4 and verbose output
-llm = ChatOpenAI(model="gpt-4", temperature=0, verbose=True)
+llm = ChatOpenAI(model="gpt-4", temperature=0)
 
 # Type definitions
 State = Dict[str, Any]
@@ -294,49 +294,85 @@ def analyze_patents_with_llm(patents: list, user_interest: str, llm: ChatOpenAI,
     
     return relevant_findings
 
-if __name__ == "__main__":
-    # Phase 1: Collect Patents (No LLM)
-    query = input("Enter your patent search query: ")
-    score_threshold = input("Enter minimum score threshold (0-1000): ")
-    percentile = input("Enter percentile threshold (0-99, default 90): ")
-    
-    # Validate score threshold
+def get_valid_score_threshold(score_input: str) -> int:
+    """Validate and return score threshold with proper error handling."""
     try:
-        score_threshold = int(score_threshold)
-        if score_threshold < 0 or score_threshold > 1000:
-            print("Score threshold must be between 0 and 1000. Using default value of 600.")
-            score_threshold = 600
+        score = int(score_input)
+        if 0 <= score <= 1000:
+            return score
+        print("Score threshold must be between 0 and 1000. Using default value of 600.")
     except ValueError:
         print("Invalid score threshold. Using default value of 600.")
-        score_threshold = 600
-        
-    # Validate percentile
+    return 600
+
+def get_valid_percentile(percentile_input: str) -> float:
+    """Validate and return percentile with proper error handling."""
     try:
-        percentile = float(percentile) if percentile.strip() else 90
-        if percentile < 0 or percentile > 99:
-            print("Percentile must be between 0 and 99. Using default value of 90.")
-            percentile = 90
+        percentile = float(percentile_input) if percentile_input.strip() else 90
+        if 0 <= percentile <= 99:
+            return percentile
+        print("Percentile must be between 0 and 99. Using default value of 90.")
     except ValueError:
         print("Invalid percentile. Using default value of 90.")
-        percentile = 90
-    
-    # Collect patents directly without LLM
+    return 90
+
+def collect_and_display_patents(query: str, score_threshold: int, percentile: float) -> tuple:
+    """Collect patents and display results in formatted output."""
     result = collect_patents(query, score_threshold)
     print(result["formatted_output"])
     
-    # Phase 2: Get top percentile patents
     top_patents = get_top_percentile_patents(result["patents"], percentile)
-    print(f"\nFound {len(top_patents)} patents in the {percentile}th percentile:")
-    print("\nTop Patent URLs:")
-    print("-" * 50)
-    for patent in top_patents:
-        print(f"Score {patent['score']}: {patent['url']}")
-    
-    # Phase 3: LLM Analysis with Sliding Window Memory
     if top_patents:
-        analyze = input("\nWould you like to analyze these patents with AI? (yes/no): ").lower()
-        if analyze == 'yes':
-            interest = input("\nWhat aspects of these patents interest you most? (e.g., 'natural language processing'): ")
-            # Ask if user wants explanations (more expensive)
-            want_explanations = input("\nWould you like detailed explanations for relevance decisions? (costs more) (yes/no): ").lower() == 'yes'
-            analysis_results = analyze_patents_with_llm(top_patents, interest, llm, verbose_explanations=want_explanations)
+        print(f"\nFound {len(top_patents)} patents in the {percentile}th percentile:")
+        print("\nTop Patent URLs:")
+        print("-" * 50)
+        for patent in top_patents:
+            print(f"Score {patent['score']}: {patent['url']}")
+    
+    return result["patents"], top_patents
+
+if __name__ == "__main__":
+    while True:  # Main program loop
+        # Phase 1: Get search parameters
+        query = input("\n📝 Enter your patent search query: ")
+        score_threshold = get_valid_score_threshold(input("Enter minimum score threshold (0-1000): "))
+        percentile = get_valid_percentile(input("Enter percentile threshold (0-99, default 90): "))
+        
+        # Phase 2: Collect and display patents
+        patents, top_patents = collect_and_display_patents(query, score_threshold, percentile)
+        
+        if not top_patents:
+            retry = input("\n❌ No patents found. Would you like to try another search? (yes/no): ").lower()
+            if retry != 'yes':
+                break
+            continue
+        
+        # Phase 3: Analysis loop
+        while True:
+            analyze = input("\n🤖 Would you like to analyze these patents with AI? (yes/no): ").lower()
+            if analyze == 'yes':
+                interest = input("\n🎯 What aspects of these patents interest you most? (e.g., 'natural language processing'): ")
+                want_explanations = input("\n💡 Would you like detailed explanations for relevance decisions? (costs more) (yes/no): ").lower() == 'yes'
+                
+                # Perform analysis
+                analysis_results = analyze_patents_with_llm(top_patents, interest, llm, verbose_explanations=want_explanations)
+                
+                # Navigation menu
+                print("\n🔄 What would you like to do next?")
+                print("1. Start a new patent search")
+                print("2. Analyze these patents with a different focus")
+                print("3. Exit")
+                
+                choice = input("Enter your choice (1-3): ").strip()
+                if choice == '1':
+                    break  # Break to outer loop for new search
+                elif choice == '2':
+                    continue  # Continue analysis loop
+                else:
+                    print("\n👋 Thank you for using the patent analysis tool!")
+                    exit()
+            elif analyze == 'no':
+                print("\n👋 Thank you for using the patent analysis tool!")
+                exit()
+            else:
+                print("\n⚠️ Please enter 'yes' or 'no'")
