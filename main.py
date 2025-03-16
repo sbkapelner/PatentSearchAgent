@@ -133,11 +133,125 @@ def setup_llm_analysis():
     workflow.set_entry_point("llm")
     return workflow.compile()
 
-def analyze_patents_with_llm(patents: list, analysis_prompt: str):
-    """Analyze selected patents using LLM."""
-    chain = setup_llm_analysis()
-    state = {"messages": [HumanMessage(content=analysis_prompt)]}
-    return chain.invoke(state)
+def analyze_patents_with_llm(patents: list, user_interest: str, chunk_size: int = 1000):
+    """Analyze patents using LLM with sliding window memory and user's interest focus.
+    
+    Args:
+        patents: List of patents to analyze
+        user_interest: User's specific interest or focus area
+        chunk_size: Size of text chunks to process
+    """
+    from tools import analyze_patent_content
+    llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, verbose=True)
+    
+    print("\n🤖 Starting Patent Analysis")
+    print("=" * 30)
+    print(f"Focus: {user_interest}")
+    
+    relevant_findings = []
+    
+    for i, patent in enumerate(patents, 1):
+        print(f"\nAnalyzing Patent {i}/{len(patents)}: {patent['title']}")
+        
+        # Get patent content
+        content = analyze_patent_content(patent['url'])
+        if not content:
+            print("Failed to retrieve patent content")
+            continue
+        
+        # Use description section for analysis
+        text = content['sections']['description']
+        if not text.strip():
+            print("No description section found in patent")
+            continue
+            
+        # Split description into chunks
+        chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+        
+        # Initialize memory window for this patent
+        memory_window = []
+        chunk_findings = []
+        
+        print(f"Processing {len(chunks)} chunks...")
+        
+        for j, chunk in enumerate(chunks, 1):
+            # Create prompt with sliding window memory
+            memory_context = "\n".join([f"Previous Chunk Context {k+1}:\n{mem}" 
+                                      for k, mem in enumerate(memory_window[-2:])])
+            
+            prompt = f"""User's Interest: {user_interest}
+            
+            Previous Context:
+            {memory_context}
+            
+            Does this chunk of patent text contain information relevant to the user's interest?
+            Respond with EXACTLY one word: either 'yes' or 'no'.
+            
+            Patent Chunk {j}/{len(chunks)}:
+            {chunk}
+            """
+            
+            messages = [
+                {"role": "system", "content": "You are a patent analysis expert. Your task is to determine if a chunk of text is relevant to a specific interest. Respond with EXACTLY one word: 'yes' or 'no'."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = llm.invoke(messages)
+            
+            # Update memory window with current chunk
+            memory_window.append(chunk)
+            if len(memory_window) > 2:
+                memory_window.pop(0)
+            
+            # Store the yes/no response
+            is_relevant = response.content.strip().lower() == 'yes'
+            chunk_findings.append({
+                'chunk_num': j,
+                'is_relevant': is_relevant
+            })
+            # Calculate current progress
+            current_relevant = sum(1 for f in chunk_findings if f['is_relevant'])
+            current_ratio = current_relevant / j
+            
+            print(f"\n🔎 Analyzing Chunk {j}/{len(chunks)}")
+            print("=" * 30)
+            print(f"📄 Content Preview:")
+            print(f"`{chunk[:200]}...`")
+            print(f"🤖 LLM Response: {'✅ Relevant' if is_relevant else '❌ Not relevant'}")
+            print(f"📊 Progress: {current_relevant}/{j} chunks relevant ({current_ratio:.1%})\n")
+        
+        # Analyze chunk findings to determine if patent is relevant
+        relevant_chunks = sum(1 for f in chunk_findings if f['is_relevant'])
+        relevance_ratio = relevant_chunks / len(chunk_findings)
+        
+        # If at least 25% of chunks are relevant, consider the patent relevant
+        if relevance_ratio >= 0.25:
+            relevant_findings.append({
+                'patent': patent,
+                'relevance_ratio': relevance_ratio,
+                'relevant_chunks': relevant_chunks,
+                'total_chunks': len(chunk_findings)
+            })
+            print(f"Patent is relevant: {relevant_chunks}/{len(chunk_findings)} chunks relevant ({relevance_ratio:.1%})")
+        else:
+            print(f"Patent not relevant: only {relevant_chunks}/{len(chunk_findings)} chunks relevant ({relevance_ratio:.1%})")
+            
+        # Clear memory window between patents
+        memory_window = []
+        
+    # Display relevant patents
+    if relevant_findings:
+        print("\n🔍 Patents Matching Your Interest")
+        print("=" * 30)
+        
+        for rf in relevant_findings:
+            print(f"📄 [{rf['patent']['title']}]({rf['patent'].get('url', '#')})")
+            print(f"📊 Relevance Score: {rf['relevance_ratio']:.1%} ({rf['relevant_chunks']}/{rf['total_chunks']} chunks)")
+            print(f"🔢 Patent Number: `{rf['patent'].get('number', 'N/A')}`\n")
+    else:
+        print("\nNo patents were found to be sufficiently relevant to your interest.")
+    
+    return relevant_findings
 
 if __name__ == "__main__":
     # Phase 1: Collect Patents (No LLM)
@@ -177,8 +291,9 @@ if __name__ == "__main__":
     for patent in top_patents:
         print(f"Score {patent['score']}: {patent['url']}")
     
-    # Phase 3: LLM Analysis (to be implemented)
-    # if top_patents:
-    #     analyze = input("\nWould you like to analyze these patents with AI? (yes/no): ").lower()
-    #     if analyze == 'yes':
-    #         # TODO: Implement LLM analysis
+    # Phase 3: LLM Analysis with Sliding Window Memory
+    if top_patents:
+        analyze = input("\nWould you like to analyze these patents with AI? (yes/no): ").lower()
+        if analyze == 'yes':
+            interest = input("\nWhat aspects of these patents interest you most? (e.g., 'natural language processing'): ")
+            analysis_results = analyze_patents_with_llm(top_patents, interest)

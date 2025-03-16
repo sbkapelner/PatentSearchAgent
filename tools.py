@@ -179,6 +179,60 @@ def parse_patent_markdown(markdown_text: str, score_threshold: int) -> list:
             
     return extracted_data
 
+def analyze_patent_content(url: str) -> dict:
+    """Analyze a single patent's content from its URL.
+    
+    Args:
+        url: The patent URL to analyze
+        
+    Returns:
+        dict: Patent content and metadata
+    """
+    try:
+        response = app.scrape_url(
+            url,
+            params={"formats": ["markdown"]}
+        )
+        
+        if not response or "markdown" not in response:
+            return None
+            
+        content = response["markdown"]
+        
+        # Extract sections (basic parsing, can be enhanced)
+        sections = {
+            'abstract': '',
+            'claims': '',
+            'description': ''
+        }
+        
+        current_section = None
+        for line in content.split('\n'):
+            line = line.strip()
+            lower_line = line.lower()
+            
+            if 'abstract' in lower_line:
+                current_section = 'abstract'
+                continue
+            elif 'claims' in lower_line:
+                current_section = 'claims'
+                continue
+            elif 'description' in lower_line:
+                current_section = 'description'
+                continue
+                
+            if current_section and line:
+                sections[current_section] += line + '\n'
+        
+        return {
+            'full_content': content,
+            'sections': sections
+        }
+        
+    except Exception as e:
+        print(f"Error analyzing patent content: {e}")
+        return None
+
 # Define the tool for use with LangGraph
 firecrawl_tool = Tool(
     name="firecrawl_patent_scraper",
