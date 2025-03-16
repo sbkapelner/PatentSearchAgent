@@ -137,12 +137,12 @@ chain = workflow.compile()
 
 if __name__ == "__main__":
     query = input("Enter your patent search query: ")
-    score_threshold = input("Enter minimum score threshold (600-1000): ")
+    score_threshold = input("Enter minimum score threshold (0-1000): ")
     
     try:
         score_threshold = int(score_threshold)
-        if score_threshold < 600 or score_threshold > 1000:
-            print("Score threshold must be between 600 and 1000. Using default value of 600.")
+        if score_threshold < 0 or score_threshold > 1000:
+            print("Score threshold must be between 0 and 1000. Using default value of 600.")
             score_threshold = 600
     except ValueError:
         print("Invalid score threshold. Using default value of 600.")
