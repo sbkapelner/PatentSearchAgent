@@ -92,11 +92,18 @@ def process_tool_output(state: State) -> Dict[str, Any]:
         name=function_call["name"],
     )
     
-    # Print the output directly if it's from the patent scraper
-    if function_call["name"] == "firecrawl_patent_scraper":
-        print("\n🔹 Patent Search Results:\n")
-        print(output)
+    # Handle structured output from the patent scraper
+    if function_call["name"] == "firecrawl_patent_scraper" and isinstance(output, dict):
+        if "formatted_output" in output:
+            print(output["formatted_output"])
         
+        # Store structured data in state for potential future use
+        return {
+            "messages": [*messages, function_message],
+            "patents": output.get("patents", []),
+            "metadata": output.get("metadata", {})
+        }
+    
     return {"messages": [*messages, function_message]}
 
 # Create the graph
