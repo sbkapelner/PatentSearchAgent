@@ -6,18 +6,35 @@ import os
 FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
 app = FirecrawlApp(api_key=FIRECRAWL_API_KEY)
 
-def scrape_patents_freepatentsonline(query: str, pages: int = 2) -> str:
+def scrape_patents_freepatentsonline(query: str, pages: int = 2, score_threshold: int = 600) -> str:
     """Scrape patents from FreePatentsOnline using Firecrawl API."""
     base_url = "https://www.freepatentsonline.com/result.html"
     extracted_patents = []
 
-    # Extract the actual query if it's in JSON format
+    # First handle JSON format if present
     if isinstance(query, str) and query.startswith('{"__arg1":'):
         import json
         try:
-            query = json.loads(query)["__arg1"]
+            data = json.loads(query)
+            query = data["__arg1"]
+            if "__arg2" in data:
+                score_threshold = int(data["__arg2"])
         except:
             pass
+
+    # Then extract query and score_threshold from input
+    if isinstance(query, str) and 'minimum score threshold:' in query:
+        # Extract query and threshold from the message
+        parts = query.split('minimum score threshold:')
+        if len(parts) == 2:
+            query = parts[0].replace('Search for patents using query:', '').strip()
+            try:
+                score_threshold = int(parts[1].strip())
+            except ValueError:
+                pass  # Keep default if conversion fails
+    elif isinstance(query, dict):
+        score_threshold = query.get('score_threshold', score_threshold)
+        query = query.get('query', '')
 
     for page in range(1, pages + 1):
         # Format query properly for the URL
@@ -35,7 +52,11 @@ def scrape_patents_freepatentsonline(query: str, pages: int = 2) -> str:
 
             # Parse markdown response to extract relevant patent data
             markdown_text = response["markdown"]
-            patents = parse_patent_markdown(markdown_text)
+            print("\nRaw markdown from Firecrawl:")
+            print("-" * 50)
+            print(markdown_text)
+            print("-" * 50)
+            patents = parse_patent_markdown(markdown_text, score_threshold)
             if patents:
                 extracted_patents.extend(patents)
                 
@@ -46,76 +67,84 @@ def scrape_patents_freepatentsonline(query: str, pages: int = 2) -> str:
     if not extracted_patents:
         return "No patents found matching your search criteria."
 
-    # Sort patents by score in descending order
-    sorted_patents = sorted(extracted_patents, key=lambda x: x['score'], reverse=True)
-    
     # Format the output
-    result = f"🔍 Found {len(sorted_patents)} relevant wine-related patents for '{query}' (scores >= 600):\n\n"
+    result = f"🔍 Found {len(extracted_patents)} patents for '{query}' (relevance score >= {score_threshold}):\n\n"
     
-    for i, patent in enumerate(sorted_patents, start=1):
+    for i, patent in enumerate(extracted_patents, start=1):
         result += f"📄 Patent #{i}:\n"
         result += f"   Title: **[{patent['title']}]({patent['url']})**\n"
-        result += f"   Patent Number: `{patent['patent_number']}`\n"
-        result += f"   Relevance Score: {patent['score']}\n\n"
+        result += f"   Patent Number: `{patent['patent_number']}`\n   Relevance Score: {patent['score']}\n\n"
 
     return result
 
-def parse_patent_markdown(markdown_text: str) -> list:
-    """Parses markdown text and extracts patents."""
+def parse_patent_markdown(markdown_text: str, score_threshold: int) -> list:
+    """Parses markdown text and extracts patents with scores."""
     extracted_data = []
     lines = markdown_text.split('\n')
     
-    # Process all lines looking for patent entries
+    # Find table header to locate score column
+    score_col_idx = -1
+    for i, line in enumerate(lines):
+        if '| Match | Document | Document Title | Score |' in line:
+            score_col_idx = 3  # Score is the 4th column (0-based index 3)
+            break
+    
+    if score_col_idx == -1:
+        return extracted_data
+    
+    # Process table rows
+    current_score = None
     for i, line in enumerate(lines):
         try:
-            # Check if line contains a patent entry (has a URL to a specific patent)
-            if 'freepatentsonline.com/' in line and '.html' in line:
-                # Skip navigation links
-                if 'result.html' in line or 'search.html' in line:
-                    continue
-                    
-                # Extract patent number from URL
-                url_start = line.find('(https://www.freepatentsonline.com/')
-                if url_start == -1:
-                    continue
-                    
-                url_end = line.find(')', url_start)
-                if url_end == -1:
-                    continue
-                    
-                url = line[url_start + 1:url_end]
-                patent_num = url.split('/')[-1].replace('.html', '')
+            if '|' not in line:
+                continue
                 
-                # Extract title
-                title_start = line.find('[', 0, url_start)
-                title_end = line.find(']', title_start)
-                if title_start == -1 or title_end == -1:
-                    continue
-                    
-                title = line[title_start + 1:title_end]
+            # Split line into columns and clean up
+            cols = [col.strip() for col in line.split('|')]
+            if len(cols) < 5:  # Need at least 5 columns (including empty first/last)
+                continue
                 
-                # Skip non-patent links
-                if not title or title in ['<', '>', 'search again', '2', '3', '4', '5']:
-                    continue
+            # Try to extract score
+            try:
+                current_score = int(cols[score_col_idx + 1])
+            except:
+                continue
                 
-                # Score is usually in the next few lines
-                score = 1000  # Default high score if not found
-                for j in range(i, min(i + 3, len(lines))):
-                    if str(j+1) in lines[j]:
-                        try:
-                            score = 1000 - (j - i) * 100  # Decrease score based on position
-                        except:
-                            continue
-                        break
+            # Check score threshold
+            if current_score < score_threshold:
+                continue
                 
-                if score >= 600:
-                    patent_info = {
-                        'patent_number': patent_num,
-                        'title': title,
-                        'url': url,
-                        'score': score
-                    }
-                    extracted_data.append(patent_info)
+            # Extract title and URL
+            title_col = cols[3]  # Document Title column
+            if '[' not in title_col or ']' not in title_col or '(' not in title_col or ')' not in title_col:
+                continue
+                
+            title_start = title_col.find('[')
+            title_end = title_col.find(']')
+            url_start = title_col.find('(')
+            url_end = title_col.find(')')
+            
+            if title_start == -1 or title_end == -1 or url_start == -1 or url_end == -1:
+                continue
+                
+            title = title_col[title_start + 1:title_end]
+            url = title_col[url_start + 1:url_end]
+            
+            # Skip non-patent links
+            if 'result.html' in url or 'search.html' in url:
+                continue
+                
+            # Extract patent number
+            patent_num = url.split('/')[-1].replace('.html', '')
+            
+            # Add patent to results
+            patent_info = {
+                'patent_number': patent_num,
+                'title': title,
+                'url': url,
+                'score': current_score
+            }
+            extracted_data.append(patent_info)
                 
         except Exception as e:
             continue
@@ -126,5 +155,5 @@ def parse_patent_markdown(markdown_text: str) -> list:
 firecrawl_tool = Tool(
     name="firecrawl_patent_scraper",
     func=scrape_patents_freepatentsonline,
-    description="Scrapes patent data from FreePatentsOnline for a given search term and returns all patents with a score of 600 or greater."
+    description="Scrapes patent data from FreePatentsOnline for a given search term and returns all matching patents."
 )
