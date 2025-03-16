@@ -1,2 +1,16 @@
+# Environment variables and virtual environments
 .env
-/env
+env/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+.DS_Store
