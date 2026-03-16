@@ -1,0 +1,39 @@
+#### place in agent-zero-skills/patent-search/SKILL.md
+
+# Patent Search Skill
+
+This skill provides a structured workflow for conducting a patent search.
+
+## Instructions
+
+When this skill is loaded, follow the steps below in order.
+
+### Step 1 - Query Generation
+- Consider the most recent user prompt and any files in `/usr/projects/patent-search/data/incoming/`. The most recent user prompt and files in `/usr/projects/patent-search/data/incoming/` may or may not explicitly suggest some queries. Generate a python list of queries (assign this list to a variable called "queries") to loop through in Step 2 - Google Patents Search. Feel free to use Booleans if you think it will yield more relevant search results.
+- Here is an example list of queries for the example user prompt "I need to do a patent search on a wine maker that uses a servo motor.":
+	- queries = [
+    '(wine OR winery OR vinification) AND ("servo motor" OR "servo driven" OR "servo")',
+    '(wine OR beverage) AND ("servo motor" OR "servo driven" OR "servo")',
+    '(liquid OR fluid) AND ("servo motor" OR "servo driven" OR "servo")',
+    '(wine OR beverage) AND ("precision control")',
+    '(wine OR winery OR vinification) AND ("precision control")',
+    '(liquid OR fluid) AND ("precision control")'
+]
+
+### Step 2 - Google Patent Search
+- Loop through the list of queries generated in Step 1 - Query Generation and pass them through the patent_search tool. The patent_search tool will return the abstracts and associated reference numbers of the top 10 Google Patents results for that query. Add each of the abstracts returned for each query in the list of queries to a single python dictionary using the associated reference numbers as keys. Assign this dictionary to a variable named "abstracts". Remove entries with duplicative abstracts and/or reference numbers from this single python dictionary. 
+
+### Step 3 - Rate the Abstracts
+- Read through each of the abstracts in the dictionary of abstracts generated in Step 2 - Google Patent Search. Assign a rating of high to those abstracts you think are highly relevant to the most recent user prompt and the files in `/usr/projects/patent-search/data/incoming/`. Assign a rating of moderate to those abstracts you think are moderately relevant to the most recent user prompt and the files in `/usr/projects/patent-search/data/incoming/`. Assign a rating of low to those abstracts you think are minimally relevant to the most recent user prompt and the files in `/usr/projects/patent-search/data/incoming/`. Store the ratings in the dictionary of abstracts generated in Step 2 - Google Patent Search.
+
+### Step 4- Identify Seeds
+- Loop through the dictionary of abstracts with ratings generated in Step 3 - Rate the Abstracts and print each abstract one by one that has a rating of "high" on the screen one by one along with the Google Patents generated with the corresponding reference number and the gp_url tool. After printing each abstract ask the user ‘Is this a seed? yes or no?’ and continue once the user responds. Add "seed" if user responds "yes" and "not seed" if user responds "no" to the dictionary values along with the abstracts and the ratings.
+
+### Step 5 - Collect the Related References
+- For each entry in the dictionary identified as "seed" in Step 4- Identify Seeds, collect all of the related references using the related_references tool. 
+
+### Step 6 - Collect Data in a CSV
+- Make a python dictionary of all of the related references collected in Step 5 - Collect the Related References and all of the reference numbers from the dictionary from Step 4- Identify Seeds. Call this python dictionary called "results".
+- Remove duplicative reference numbers from the dictionary "results". 
+- Use the patent_search tool to populate the dictionary "results" with title, abstract url.
+- Save the dictionary "results" to a csv in the same manner as the file called template.csv in `/usr/projects/patent-search/templates/`
